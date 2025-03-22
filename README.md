@@ -16,7 +16,7 @@ JSONGroup 是一个功能强大的 Go 语言库，用于按照字段标签的分
 ## 安装
 
 ```bash
-go get github.com/hs/jsongroup
+go get github.com/JieBaiYou/jsongroup
 ```
 
 ## 快速开始
@@ -28,7 +28,7 @@ package main
 
 import (
     "fmt"
-    "github.com/hs/jsongroup"
+    "github.com/JieBaiYou/jsongroup"
 )
 
 type User struct {
@@ -75,7 +75,7 @@ package main
 
 import (
     "fmt"
-    "github.com/hs/jsongroup"
+    "github.com/JieBaiYou/jsongroup"
 )
 
 type Address struct {
