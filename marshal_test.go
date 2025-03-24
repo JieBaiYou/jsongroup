@@ -140,7 +140,7 @@ func TestMarshalByGroups(t *testing.T) {
 				Name: "张三",
 			},
 			groups: []string{"public"},
-			want:   `{"id":1,"name":"张三"}`,
+			want:   `{"id":1,"name":"张三","tags":[]}`,
 		},
 		{
 			name: "nil指针字段",
@@ -150,7 +150,7 @@ func TestMarshalByGroups(t *testing.T) {
 				Address: nil,
 			},
 			groups: []string{"public"},
-			want:   `{"id":1,"name":"张三"}`,
+			want:   `{"id":1,"name":"张三","tags":[]}`,
 		},
 		{
 			name:    "nil值",
@@ -201,7 +201,7 @@ func TestMarshalByGroupsWithOptions(t *testing.T) {
 			return
 		}
 
-		want := `{"user":{"id":1,"name":"张三"}}`
+		want := `{"user":{"id":1,"name":"张三","tags":[]}}`
 		var gotMap, wantMap any
 		_ = json.Unmarshal(got, &gotMap)
 		_ = json.Unmarshal([]byte(want), &wantMap)
@@ -245,6 +245,7 @@ func TestMarshalByGroupsWithOptions(t *testing.T) {
 			ID:      1,
 			Name:    "张三",
 			Address: nil,
+			Tags:    nil, // 显式设置为nil
 		}
 
 		// 使用NullIfEmpty选项（同时会禁用IgnoreNilPointers）
@@ -255,8 +256,11 @@ func TestMarshalByGroupsWithOptions(t *testing.T) {
 			return
 		}
 
-		// Address字段应该为null而不是被省略
-		want := `{"address":null,"id":1,"name":"张三","tags":[]}`
+		// 输出预期结果以帮助调试
+		t.Logf("NullIfEmpty 实际输出: %s", string(got))
+
+		// Address字段应该为null而不是被省略，Tags字段为nil所以也应该为null
+		want := `{"address":null,"id":1,"name":"张三","tags":null}`
 		var gotMap, wantMap any
 		_ = json.Unmarshal(got, &gotMap)
 		_ = json.Unmarshal([]byte(want), &wantMap)

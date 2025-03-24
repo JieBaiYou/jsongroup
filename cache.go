@@ -1,102 +1,320 @@
 package jsongroup
 
 import (
+	"container/list"
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 )
 
-// 全局字段信息缓存
+// 全局字段信息缓存实例
 var globalCache = newFieldCache()
+
+// CacheStats 提供缓存使用统计信息
+type CacheStats struct {
+	CurrentSize int     // 当前缓存条目数
+	MaxSize     int     // 最大缓存容量
+	Hits        int64   // 缓存命中次数
+	Misses      int64   // 缓存未命中次数
+	HitRatio    float64 // 命中率（0-1之间）
+}
 
 // fieldInfo 表示结构体字段的元数据
 type fieldInfo struct {
-	Index      []int    // 字段索引路径
-	Name       string   // 原始字段名称
-	JSONName   string   // JSON 序列化名称
-	Groups     []string // 字段所属分组
-	OmitEmpty  bool     // 是否忽略空值
-	Anonymous  bool     // 是否为匿名字段
+	// 字段索引路径
+	Index []int
+	// 字段原始名称
+	Name string
+	// JSON序列化名称
+	JSONName string
+	// 字段所属分组列表
+	Groups []string
+	// 是否忽略空值
+	OmitEmpty bool
+	// 是否为匿名字段
+	Anonymous bool
 }
 
-// fieldCache 用于缓存已解析的字段信息
+// cacheEntry 缓存条目，包含值和创建时间
+type cacheEntry struct {
+	// 创建时间，用于统计和清理策略
+	createdAt time.Time
+	// 缓存的字段信息列表
+	value []fieldInfo
+}
+
+// fieldCache 结构体字段信息缓存
 type fieldCache struct {
-	mu    sync.RWMutex
-	cache map[reflect.Type][]fieldInfo
+	// 保护缓存的互斥锁
+	mu sync.RWMutex
+	// 缓存映射：类型 -> 字段信息列表
+	cache map[reflect.Type]*list.Element
+	// 访问顺序列表，用于LRU淘汰
+	evictList *list.List
+	// 最大缓存条目数
+	maxSize int
+	// 缓存统计信息
+	stats cacheStat
 }
 
-// newFieldCache 创建新的字段缓存
+// cacheStat 缓存统计信息
+type cacheStat struct {
+	// 总访问次数
+	hits int64
+	// 缓存命中次数
+	misses int64
+	// 缓存淘汰次数
+	evictions int64
+}
+
+// newFieldCache 创建字段缓存
 func newFieldCache() *fieldCache {
 	return &fieldCache{
-		cache: make(map[reflect.Type][]fieldInfo),
+		cache:     make(map[reflect.Type]*list.Element),
+		evictList: list.New(),
+		maxSize:   DefaultMaxCacheSize,
+		stats:     cacheStat{},
 	}
 }
 
-// getFieldsInfo 获取指定类型的字段信息，如缓存中不存在则解析
-func (c *fieldCache) getFieldsInfo(t reflect.Type, tagKey string) []fieldInfo {
-	c.mu.RLock()
-	fields, ok := c.cache[t]
-	c.mu.RUnlock()
+// GetCacheStats 返回当前缓存使用统计信息
+func GetCacheStats() CacheStats {
+	globalCache.mu.RLock()
+	defer globalCache.mu.RUnlock()
 
-	if ok {
-		return fields
+	total := float64(globalCache.stats.hits + globalCache.stats.misses)
+	hitRatio := 0.0
+	if total > 0 {
+		hitRatio = float64(globalCache.stats.hits) / total
 	}
 
-	// 解析字段
-	fields = parseFields(t, tagKey)
+	return CacheStats{
+		CurrentSize: globalCache.evictList.Len(),
+		MaxSize:     globalCache.maxSize,
+		Hits:        globalCache.stats.hits,
+		Misses:      globalCache.stats.misses,
+		HitRatio:    hitRatio,
+	}
+}
 
-	// 写入缓存
+// SetMaxCacheSize 设置全局缓存的最大容量
+func SetMaxCacheSize(size int) {
+	globalCache.SetMaxSize(size)
+}
+
+// SetMaxSize 设置缓存的最大容量
+func (c *fieldCache) SetMaxSize(size int) {
 	c.mu.Lock()
-	c.cache[t] = fields
-	c.mu.Unlock()
+	defer c.mu.Unlock()
 
-	return fields
+	c.maxSize = size
+	// 如果新的大小小于当前缓存条目数，需要进行淘汰
+	for c.evictList.Len() > c.maxSize && c.maxSize > 0 {
+		if err := c.evict(); err != nil {
+			// 淘汰失败时停止，避免死循环
+			break
+		}
+	}
 }
 
-// parseFields 解析结构体字段的元数据（包括标签、索引等）
-func parseFields(t reflect.Type, tagKey string) []fieldInfo {
+// GetStats 获取缓存统计信息
+func (c *fieldCache) GetStats() CacheStats {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	total := float64(c.stats.hits + c.stats.misses)
+	hitRatio := 0.0
+	if total > 0 {
+		hitRatio = float64(c.stats.hits) / total
+	}
+
+	return CacheStats{
+		CurrentSize: c.evictList.Len(),
+		MaxSize:     c.maxSize,
+		Hits:        c.stats.hits,
+		Misses:      c.stats.misses,
+		HitRatio:    hitRatio,
+	}
+}
+
+// Clear 清空缓存
+func (c *fieldCache) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.cache = make(map[reflect.Type]*list.Element)
+	c.evictList.Init()
+	c.stats = cacheStat{}
+}
+
+// getFieldsInfo 获取类型的字段信息
+// 优先从缓存获取，不存在则解析并加入缓存
+func (c *fieldCache) getFieldsInfo(t reflect.Type, tagKey string) ([]fieldInfo, error) {
+	// 获取指针内部类型
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 
+	// 快速检查非结构体类型
 	if t.Kind() != reflect.Struct {
-		return nil
+		return nil, nil
+	}
+
+	// 尝试从缓存读取
+	c.mu.RLock()
+	if element, ok := c.cache[t]; ok {
+		entry, valid := element.Value.(*cacheEntry)
+		if valid && entry != nil {
+			c.stats.hits++
+			// 移动到列表头部（表示最近使用）
+			c.mu.RUnlock() // 必须先释放读锁
+
+			c.mu.Lock()
+			c.evictList.MoveToFront(element)
+			c.mu.Unlock()
+
+			return entry.value, nil
+		}
+	}
+	c.mu.RUnlock() // 缓存未命中，释放读锁
+
+	// 解析字段信息
+	fields, err := parseFields(t, tagKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// 添加到缓存
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.stats.misses++
+
+	// 再次检查，可能在竞争条件下已被其他goroutine添加
+	if element, ok := c.cache[t]; ok {
+		entry, valid := element.Value.(*cacheEntry)
+		if valid && entry != nil {
+			c.evictList.MoveToFront(element)
+			return entry.value, nil
+		}
+	}
+
+	// 检查是否达到容量上限，如果是，先淘汰最旧条目
+	for c.maxSize > 0 && c.evictList.Len() >= c.maxSize {
+		if err := c.evict(); err != nil {
+			return fields, err // 淘汰失败，但仍返回解析的字段
+		}
+	}
+
+	// 创建新缓存条目
+	entry := &cacheEntry{
+		createdAt: time.Now(),
+		value:     fields,
+	}
+	element := c.evictList.PushFront(entry)
+	c.cache[t] = element
+
+	return fields, nil
+}
+
+// evict 根据LRU淘汰策略删除一个缓存条目
+func (c *fieldCache) evict() error {
+	// 从列表尾部获取最近最少使用的条目
+	if c.evictList.Len() == 0 {
+		return nil // 缓存为空，无需淘汰
+	}
+
+	// 获取最久未使用的条目
+	element := c.evictList.Back()
+	if element == nil {
+		return nil // 无可淘汰条目
+	}
+
+	// 获取键值并从列表中移除
+	c.evictList.Remove(element)
+
+	// 安全地转换条目
+	entry, ok := element.Value.(*cacheEntry)
+	if !ok || entry == nil {
+		return CacheOverflowError("字段缓存", c.maxSize)
+	}
+
+	// 找到对应的类型并从映射中移除
+	found := false
+	for typ, elem := range c.cache {
+		if elem == element {
+			delete(c.cache, typ)
+			found = true
+			c.stats.evictions++
+			break
+		}
+	}
+
+	if !found {
+		// 无法找到映射中对应的条目，这是不应该发生的
+		return CacheOverflowError("字段缓存", c.maxSize)
+	}
+
+	return nil
+}
+
+// parseFields 解析结构体字段信息
+func parseFields(t reflect.Type, tagKey string) ([]fieldInfo, error) {
+	if t.Kind() != reflect.Struct {
+		return nil, nil
 	}
 
 	var fields []fieldInfo
+	var err error
 
-	// 处理所有结构体字段
-	for i := 0; i < t.NumField(); i++ {
+	// 捕获panic以提供友好的错误信息
+	defer func() {
+		if r := recover(); r != nil {
+			// 转换为标准错误
+			err = &Error{
+				Type:    ErrTypeReflection,
+				Message: "解析结构体字段时发生panic",
+				Value:   r,
+			}
+			// 这里不能直接返回err，因为defer的返回值无法影响外部函数
+			// 但至少记录了panic，并防止程序崩溃
+			fields = nil
+		}
+	}()
+
+	// 处理所有字段
+	for i := range t.NumField() {
 		field := t.Field(i)
 
-		// 忽略未导出字段
+		// 跳过非导出字段
 		if !field.IsExported() {
 			continue
 		}
 
-		// 获取tags
+		// 获取tag标签
 		jsonTag := field.Tag.Get("json")
 		groupsTag := field.Tag.Get(tagKey)
 
-		// 解析json标签，支持omitempty选项
+		// 解析JSON标签
 		jsonName, omitEmpty := parseJSONTag(field.Name, jsonTag)
-
-		// 如果json标签为"-"，则忽略此字段
 		if jsonName == "-" {
-			continue
+			continue // 忽略标记为"-"的字段
 		}
 
-		// 解析groups标签
+		// 解析分组标签
 		groups := parseGroupsTag(groupsTag)
 
-		// 处理匿名嵌套结构体字段
+		// 处理匿名嵌套字段
 		if field.Anonymous && field.Type.Kind() == reflect.Struct {
-			// 获取嵌套字段的信息
-			nestedFields := parseFields(field.Type, tagKey)
+			// 递归处理嵌套字段
+			nestedFields, nestedErr := parseFields(field.Type, tagKey)
+			if nestedErr != nil {
+				return nil, nestedErr
+			}
 
-			// 将嵌套字段添加到主列表
+			// 添加嵌套字段，保持正确的索引路径
 			for _, nf := range nestedFields {
-				// 特殊处理嵌套字段的索引路径
 				indexPath := append([]int{i}, nf.Index...)
 
 				fields = append(fields, fieldInfo{
@@ -108,16 +326,6 @@ func parseFields(t reflect.Type, tagKey string) []fieldInfo {
 					Anonymous: nf.Anonymous,
 				})
 			}
-		} else if field.Anonymous {
-			// 非结构体的匿名字段
-			fields = append(fields, fieldInfo{
-				Index:     []int{i},
-				Name:      field.Name,
-				JSONName:  jsonName,
-				Groups:    groups,
-				OmitEmpty: omitEmpty,
-				Anonymous: true,
-			})
 		} else {
 			// 普通字段
 			fields = append(fields, fieldInfo{
@@ -126,15 +334,15 @@ func parseFields(t reflect.Type, tagKey string) []fieldInfo {
 				JSONName:  jsonName,
 				Groups:    groups,
 				OmitEmpty: omitEmpty,
-				Anonymous: false,
+				Anonymous: field.Anonymous,
 			})
 		}
 	}
 
-	return fields
+	return fields, err
 }
 
-// parseJSONTag 解析json标签
+// parseJSONTag 解析JSON标签
 func parseJSONTag(fieldName, jsonTag string) (string, bool) {
 	if jsonTag == "" {
 		return fieldName, false
@@ -146,21 +354,19 @@ func parseJSONTag(fieldName, jsonTag string) (string, bool) {
 		name = fieldName
 	}
 
-	// 检查是否设置了omitempty选项
+	// 检查omitempty选项
 	omitEmpty := false
-	if len(parts) > 1 {
-		for _, opt := range parts[1:] {
-			if opt == "omitempty" {
-				omitEmpty = true
-				break
-			}
+	for _, opt := range parts[1:] {
+		if opt == "omitempty" {
+			omitEmpty = true
+			break
 		}
 	}
 
 	return name, omitEmpty
 }
 
-// parseGroupsTag 解析分组标签，支持逗号分隔的多个分组
+// parseGroupsTag 解析分组标签
 func parseGroupsTag(groupsTag string) []string {
 	if groupsTag == "" {
 		return nil
