@@ -125,9 +125,9 @@ func TestBasicTypesWithOptions(t *testing.T) {
 		name string
 		opts *Options
 	}{
-		{"默认选项", DefaultOptions()},
-		{"顶层键", DefaultOptions().WithTopLevelKey("data")},
-		{"空值处理", DefaultOptions().WithNullIfEmpty(true)},
+		{"默认选项", New()},
+		{"顶层键", New().WithTopLevelKey("data")},
+		{"空值处理", New().WithNullIfEmpty(true)},
 	}
 
 	for _, tc := range testCases {
@@ -220,8 +220,8 @@ func TestSpecialValues(t *testing.T) {
 		name string
 		opts *Options
 	}{
-		{"默认选项", DefaultOptions()},
-		{"空值为null", DefaultOptions().WithNullIfEmpty(true)},
+		{"默认选项", New()},
+		{"空值为null", New().WithNullIfEmpty(true)},
 	}
 
 	for _, gt := range groupTests {

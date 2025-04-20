@@ -44,8 +44,8 @@ type Options struct {
 	MaxCacheSize int
 }
 
-// DefaultOptions 返回默认选项配置
-func DefaultOptions() *Options {
+// New 返回默认选项配置
+func New() *Options {
 	return &Options{
 		GroupMode:             GroupModeOr,
 		TopLevelKey:           "",

@@ -89,7 +89,7 @@ func (ctx *serializeContext) checkPointer(ptr reflect.Value) error {
 
 // MarshalByGroups 用于按指定 groups 过滤字段并输出 JSON 字节
 func MarshalByGroups(v any, groups ...string) ([]byte, error) {
-	return MarshalByGroupsWithOptions(v, DefaultOptions(), groups...)
+	return MarshalByGroupsWithOptions(v, New(), groups...)
 }
 
 // MarshalByGroupsWithOptions 带更多可选配置的序列化函数
@@ -139,7 +139,7 @@ func MarshalByGroupsWithOptions(v any, opts *Options, groups ...string) ([]byte,
 
 // MarshalToMap 将对象序列化为map[string]any形式
 func MarshalToMap(v any, groups ...string) (map[string]any, error) {
-	return MarshalToMapWithOptions(v, DefaultOptions(), groups...)
+	return MarshalToMapWithOptions(v, New(), groups...)
 }
 
 // MarshalToMapWithOptions 带选项的Map序列化

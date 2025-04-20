@@ -45,7 +45,7 @@ func TestMaxDepthLimit(t *testing.T) {
 	}
 
 	// 使用自定义深度限制
-	opts := DefaultOptions().WithMaxDepth(10)
+	opts := New().WithMaxDepth(10)
 	deepCustom := createNestedStruct(11)
 	_, err = MarshalByGroupsWithOptions(deepCustom, opts, "public")
 	if err == nil {
@@ -56,7 +56,7 @@ func TestMaxDepthLimit(t *testing.T) {
 	}
 
 	// 禁用深度检查
-	opts = DefaultOptions().WithMaxDepth(0)
+	opts = New().WithMaxDepth(0)
 	deepNoLimit := createNestedStruct(50)
 	_, err = MarshalByGroupsWithOptions(deepNoLimit, opts, "public")
 	if err != nil {
@@ -103,7 +103,7 @@ func TestCircularReferenceDetection(t *testing.T) {
 	}
 
 	// 禁用循环引用检测（将会导致栈溢出，但我们只在测试中验证选项逻辑）
-	// opts := DefaultOptions().WithDisableCircularCheck(true)
+	// opts := New().WithDisableCircularCheck(true)
 	// _, err = MarshalByGroupsWithOptions(nodeA, opts, "public")
 	// 注意：这里不应该期待成功，而是应该因为堆栈溢出而panic
 	// 为防止测试真的panic，我们不实际调用这个测试，仅作为示例

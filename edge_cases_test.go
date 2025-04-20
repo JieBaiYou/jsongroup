@@ -78,19 +78,19 @@ func TestCircularReferences(t *testing.T) {
 			name:   "默认选项-检测循环引用",
 			node:   node1,
 			groups: []string{"all"},
-			opts:   DefaultOptions(),
+			opts:   New(),
 		},
 		{
 			name:   "顶层键-检测循环引用",
 			node:   node1,
 			groups: []string{"base", "links"},
-			opts:   DefaultOptions().WithTopLevelKey("node"),
+			opts:   New().WithTopLevelKey("node"),
 		},
 		{
 			name:   "禁用循环检测",
 			node:   node1,
 			groups: []string{"base"},
-			opts:   DefaultOptions().WithDisableCircularCheck(true).WithMaxDepth(3), // 限制深度防止无限递归
+			opts:   New().WithDisableCircularCheck(true).WithMaxDepth(3), // 限制深度防止无限递归
 		},
 	}
 
@@ -147,22 +147,22 @@ func TestEmptyAndNilFields(t *testing.T) {
 	}{
 		{
 			name:   "默认选项",
-			opts:   DefaultOptions(),
+			opts:   New(),
 			groups: []string{"all"},
 		},
 		{
 			name:   "空值为null",
-			opts:   DefaultOptions().WithNullIfEmpty(true),
+			opts:   New().WithNullIfEmpty(true),
 			groups: []string{"empty", "nil"},
 		},
 		{
 			name:   "忽略nil指针",
-			opts:   DefaultOptions().WithIgnoreNilPointers(true),
+			opts:   New().WithIgnoreNilPointers(true),
 			groups: []string{"nil", "value"},
 		},
 		{
 			name:   "空值为null且忽略nil指针",
-			opts:   DefaultOptions().WithNullIfEmpty(true).WithIgnoreNilPointers(false), // NullIfEmpty 会覆盖 IgnoreNilPointers
+			opts:   New().WithNullIfEmpty(true).WithIgnoreNilPointers(false), // NullIfEmpty 会覆盖 IgnoreNilPointers
 			groups: []string{"all"},
 		},
 	}
@@ -235,7 +235,7 @@ func TestMaxDepth(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			opts := DefaultOptions().WithMaxDepth(tc.maxDepth)
+			opts := New().WithMaxDepth(tc.maxDepth)
 			data, err := MarshalByGroupsWithOptions(rootNode, opts, "all")
 
 			if tc.expectError {

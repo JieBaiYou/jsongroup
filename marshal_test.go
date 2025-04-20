@@ -195,7 +195,7 @@ func TestMarshalByGroupsWithOptions(t *testing.T) {
 	// 测试顶层包装
 	t.Run("TopLevelKey", func(t *testing.T) {
 		// 启用忽略nil指针
-		got, err := MarshalByGroupsWithOptions(user, DefaultOptions().WithTopLevelKey("user"), "public")
+		got, err := MarshalByGroupsWithOptions(user, New().WithTopLevelKey("user"), "public")
 		if err != nil {
 			t.Errorf("MarshalByGroupsWithOptions() error = %v", err)
 			return
@@ -213,7 +213,7 @@ func TestMarshalByGroupsWithOptions(t *testing.T) {
 
 	// 测试AND逻辑（必须同时满足所有分组）
 	t.Run("GroupModeAnd", func(t *testing.T) {
-		opts := DefaultOptions().WithGroupMode(GroupModeAnd)
+		opts := New().WithGroupMode(GroupModeAnd)
 
 		user := User{
 			ID:      1,
@@ -249,7 +249,7 @@ func TestMarshalByGroupsWithOptions(t *testing.T) {
 		}
 
 		// 使用NullIfEmpty选项（同时会禁用IgnoreNilPointers）
-		opts := DefaultOptions().WithNullIfEmpty(true)
+		opts := New().WithNullIfEmpty(true)
 		got, err := MarshalByGroupsWithOptions(user, opts, "public")
 		if err != nil {
 			t.Errorf("MarshalByGroupsWithOptions() error = %v", err)
@@ -280,7 +280,7 @@ func TestMarshalByGroupsWithOptions(t *testing.T) {
 		}
 
 		// 显式启用IgnoreNilPointers选项
-		opts := DefaultOptions().WithIgnoreNilPointers(true)
+		opts := New().WithIgnoreNilPointers(true)
 		got, err := MarshalByGroupsWithOptions(user, opts, "public")
 		if err != nil {
 			t.Errorf("MarshalByGroupsWithOptions() error = %v", err)

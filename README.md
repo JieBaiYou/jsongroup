@@ -107,34 +107,34 @@ func main() {
 	}
 
 	// 使用AND逻辑 - 字段必须同时属于public和admin组
-	opts := jsongroup.DefaultOptions().WithGroupMode(jsongroup.GroupModeAnd)
+	opts := jsongroup.New().WithGroupMode(jsongroup.GroupModeAnd)
 	andJSON, _ := jsongroup.MarshalByGroupsWithOptions(user, opts, "public", "admin")
 	fmt.Println(string(andJSON))
 	// 输出中只包含同时带有public和admin标签的字段
 	// 输出: {"address":{"city":"北京","street":"中关村大街1号"},"email":"zhangsan@example.com"}
 
 	// 使用OR逻辑 - 字段只要属于public或admin组
-	orOpts := jsongroup.DefaultOptions().WithGroupMode(jsongroup.GroupModeOr)
+	orOpts := jsongroup.New().WithGroupMode(jsongroup.GroupModeOr)
 	orJSON, _ := jsongroup.MarshalByGroupsWithOptions(user, orOpts, "public", "admin")
 	fmt.Println(string(orJSON))
 	// 输出中包含属于public或admin组的字段
 	// 输出: {"address":{"city":"北京","street":"中关村大街1号","zip":"100080"},"email":"zhangsan@example.com","id":1,"name":"张三"}
 
 	// 添加顶层包装键
-	wrapOpts := jsongroup.DefaultOptions().WithTopLevelKey("user")
+	wrapOpts := jsongroup.New().WithTopLevelKey("user")
 	wrappedJSON, _ := jsongroup.MarshalByGroupsWithOptions(user, wrapOpts, "public")
 	fmt.Println(string(wrappedJSON))
 	// 输出: {"user":{"address":{"city":"北京","street":"中关村大街1号"},"email":"zhangsan@example.com"}}
 
 	// 设置nil值输出为null而不是跳过
-	nullOpts := jsongroup.DefaultOptions().WithNullIfEmpty(true)
+	nullOpts := jsongroup.New().WithNullIfEmpty(true)
 	emptyUser := User{ID: 1, Name: "张三"}
 	nullJSON, _ := jsongroup.MarshalByGroupsWithOptions(emptyUser, nullOpts, "public")
 	fmt.Println(string(nullJSON))
 	// 输出: {"address":{"city":null,"street":null},"email":null}
 
 	// 设置最大递归深度，防止栈溢出
-	safeOpts := jsongroup.DefaultOptions().WithMaxDepth(10)
+	safeOpts := jsongroup.New().WithMaxDepth(10)
 	// 适用于处理复杂嵌套结构，防止无限递归
 	safeJSON, _ := jsongroup.MarshalByGroupsWithOptions(user, safeOpts, "public")
 	fmt.Println(string(safeJSON))

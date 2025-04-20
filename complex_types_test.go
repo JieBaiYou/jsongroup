@@ -117,11 +117,11 @@ func TestComplexStructWithOptions(t *testing.T) {
 				name string
 				opts *Options
 			}{
-				{"默认选项", DefaultOptions()},
-				{"带顶层键", DefaultOptions().WithTopLevelKey("data")},
-				{"AND逻辑", DefaultOptions().WithGroupMode(GroupModeAnd)},
-				{"空值为null", DefaultOptions().WithNullIfEmpty(true)},
-				{"忽略nil指针", DefaultOptions().WithIgnoreNilPointers(true)},
+				{"默认选项", New()},
+				{"带顶层键", New().WithTopLevelKey("data")},
+				{"AND逻辑", New().WithGroupMode(GroupModeAnd)},
+				{"空值为null", New().WithNullIfEmpty(true)},
+				{"忽略nil指针", New().WithIgnoreNilPointers(true)},
 			}
 
 			for _, opt := range options {
