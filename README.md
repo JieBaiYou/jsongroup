@@ -64,9 +64,9 @@ func main() {
     // 输出: {"password":"secret123"}
 
     // 序列化多个组（默认OR逻辑）
-    combinedJSON, _ := jsongroup.MarshalByGroups(user, "public", "admin")
-    fmt.Println(string(combinedJSON))
-    // 输出: {"id":1,"name":"张三","email":"zhangsan@example.com"}
+	combinedJSON, _ := jsongroup.MarshalByGroups(user, "public", "internal")
+	fmt.Println(string(combinedJSON))
+	// 输出: {"id":1,"name":"张三","password":"secret123"}
 }
 ```
 
@@ -76,57 +76,69 @@ func main() {
 package main
 
 import (
-    "fmt"
-    "github.com/JieBaiYou/jsongroup"
+	"fmt"
+
+	"github.com/JieBaiYou/jsongroup"
 )
 
-type Address struct {
-    Street string `json:"street" groups:"admin,public"`
-    City   string `json:"city" groups:"admin,public"`
-    ZIP    string `json:"zip" groups:"admin"`
+type User struct {
+	ID      int     `json:"id" groups:"admin"`
+	Name    string  `json:"name,omitempty" groups:"admin"`
+	Email   string  `json:"email" groups:"public,admin"`
+	Address Address `json:"address" groups:"public,admin"`
 }
 
-type User struct {
-    ID      int     `json:"id" groups:"public,admin"`
-    Name    string  `json:"name,omitempty" groups:"public,admin"`
-    Email   string  `json:"email" groups:"admin"`
-    Address Address `json:"address" groups:"public,admin"`
+type Address struct {
+	Street string `json:"street" groups:"admin,public"`
+	City   string `json:"city" groups:"admin,public"`
+	ZIP    string `json:"zip" groups:"admin"`
 }
 
 func main() {
-    user := User{
-        ID:    1,
-        Name:  "张三",
-        Email: "zhangsan@example.com",
-        Address: Address{
-            Street: "中关村大街1号",
-            City:   "北京",
-            ZIP:    "100080",
-        },
-    }
+	user := User{
+		ID:    1,
+		Name:  "张三",
+		Email: "zhangsan@example.com",
+		Address: Address{
+			Street: "中关村大街1号",
+			City:   "北京",
+			ZIP:    "100080",
+		},
+	}
 
-    // 使用AND逻辑 - 字段必须同时属于public和admin组
-    opts := jsongroup.DefaultOptions().WithGroupMode(jsongroup.GroupModeAnd)
-    andJSON, _ := jsongroup.MarshalByGroupsWithOptions(user, opts, "public", "admin")
-    fmt.Println(string(andJSON))
-    // 输出中只包含同时带有public和admin标签的字段
+	// 使用AND逻辑 - 字段必须同时属于public和admin组
+	opts := jsongroup.DefaultOptions().WithGroupMode(jsongroup.GroupModeAnd)
+	andJSON, _ := jsongroup.MarshalByGroupsWithOptions(user, opts, "public", "admin")
+	fmt.Println(string(andJSON))
+	// 输出中只包含同时带有public和admin标签的字段
+	// 输出: {"address":{"city":"北京","street":"中关村大街1号"},"email":"zhangsan@example.com"}
 
-    // 添加顶层包装键
-    wrapOpts := jsongroup.DefaultOptions().WithTopLevelKey("user")
-    wrappedJSON, _ := jsongroup.MarshalByGroupsWithOptions(user, wrapOpts, "public")
-    fmt.Println(string(wrappedJSON))
-    // 输出: {"user":{"id":1,"name":"张三","address":{"street":"中关村大街1号","city":"北京"}}}
+	// 使用OR逻辑 - 字段只要属于public或admin组
+	orOpts := jsongroup.DefaultOptions().WithGroupMode(jsongroup.GroupModeOr)
+	orJSON, _ := jsongroup.MarshalByGroupsWithOptions(user, orOpts, "public", "admin")
+	fmt.Println(string(orJSON))
+	// 输出中包含属于public或admin组的字段
+	// 输出: {"address":{"city":"北京","street":"中关村大街1号","zip":"100080"},"email":"zhangsan@example.com","id":1,"name":"张三"}
 
-    // 设置nil值输出为null而不是跳过
-    nullOpts := jsongroup.DefaultOptions().WithNullIfEmpty(true)
-    emptyUser := User{ID: 1, Name: "张三"}
-    nullJSON, _ := jsongroup.MarshalByGroupsWithOptions(emptyUser, nullOpts, "public")
-    fmt.Println(string(nullJSON))
-    // 输出: {"address":null,"id":1,"name":"张三"}
+	// 添加顶层包装键
+	wrapOpts := jsongroup.DefaultOptions().WithTopLevelKey("user")
+	wrappedJSON, _ := jsongroup.MarshalByGroupsWithOptions(user, wrapOpts, "public")
+	fmt.Println(string(wrappedJSON))
+	// 输出: {"user":{"address":{"city":"北京","street":"中关村大街1号"},"email":"zhangsan@example.com"}}
 
-    // 设置最大递归深度，防止栈溢出
-    safeOpts := jsongroup.DefaultOptions().WithMaxDepth(10)
-    // 适用于处理复杂嵌套结构，防止无限递归
+	// 设置nil值输出为null而不是跳过
+	nullOpts := jsongroup.DefaultOptions().WithNullIfEmpty(true)
+	emptyUser := User{ID: 1, Name: "张三"}
+	nullJSON, _ := jsongroup.MarshalByGroupsWithOptions(emptyUser, nullOpts, "public")
+	fmt.Println(string(nullJSON))
+	// 输出: {"address":{"city":null,"street":null},"email":null}
+
+	// 设置最大递归深度，防止栈溢出
+	safeOpts := jsongroup.DefaultOptions().WithMaxDepth(10)
+	// 适用于处理复杂嵌套结构，防止无限递归
+	safeJSON, _ := jsongroup.MarshalByGroupsWithOptions(user, safeOpts, "public")
+	fmt.Println(string(safeJSON))
+	// 输出: {"address":{"city":"北京","street":"中关村大街1号"},"email":"zhangsan@example.com"}
 }
 ```
 
@@ -184,7 +196,7 @@ node2.Next = node1
 result, err := jsongroup.MarshalByGroups(node1, "public")
 if err != nil {
     // 错误会包含循环引用的详细信息
-    fmt.Println(err) // 输出：检测到循环引用 at path 'Next.Next'
+    fmt.Println(err) // 输出：检测到循环引用 路径: 'Next.Next'
 }
 ```
 

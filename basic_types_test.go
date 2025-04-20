@@ -123,7 +123,7 @@ func TestBasicTypesWithOptions(t *testing.T) {
 	// 测试不同选项
 	testCases := []struct {
 		name string
-		opts Options
+		opts *Options
 	}{
 		{"默认选项", DefaultOptions()},
 		{"顶层键", DefaultOptions().WithTopLevelKey("data")},
@@ -218,7 +218,7 @@ func TestSpecialValues(t *testing.T) {
 
 	optionTests := []struct {
 		name string
-		opts Options
+		opts *Options
 	}{
 		{"默认选项", DefaultOptions()},
 		{"空值为null", DefaultOptions().WithNullIfEmpty(true)},

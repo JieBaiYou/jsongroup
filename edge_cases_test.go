@@ -72,7 +72,7 @@ func TestCircularReferences(t *testing.T) {
 		name   string
 		node   *Node
 		groups []string
-		opts   Options
+		opts   *Options
 	}{
 		{
 			name:   "默认选项-检测循环引用",
@@ -142,7 +142,7 @@ func TestEmptyAndNilFields(t *testing.T) {
 
 	testCases := []struct {
 		name   string
-		opts   Options
+		opts   *Options
 		groups []string
 	}{
 		{

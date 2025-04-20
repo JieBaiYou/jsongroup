@@ -115,7 +115,7 @@ func TestComplexStructWithOptions(t *testing.T) {
 			// 测试不同选项
 			options := []struct {
 				name string
-				opts Options
+				opts *Options
 			}{
 				{"默认选项", DefaultOptions()},
 				{"带顶层键", DefaultOptions().WithTopLevelKey("data")},

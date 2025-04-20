@@ -7,6 +7,7 @@ import (
 	"math"
 	"reflect"
 	"slices"
+	"strconv"
 	"time"
 )
 
@@ -20,7 +21,7 @@ type serializeContext struct {
 	// key为指针地址，value为路径
 	pointers map[uintptr]string
 	// 序列化选项
-	opts Options
+	opts *Options
 }
 
 // newContext 创建新的序列化上下文
@@ -29,7 +30,7 @@ func newContext(opts Options) *serializeContext {
 		path:     "",
 		depth:    0,
 		pointers: make(map[uintptr]string),
-		opts:     opts,
+		opts:     &opts,
 	}
 }
 
@@ -70,7 +71,13 @@ func (ctx *serializeContext) checkPointer(ptr reflect.Value) error {
 		return nil
 	}
 
-	if ptr.Kind() == reflect.Ptr && !ptr.IsNil() {
+	// 忽略空集合类型，它们不可能形成循环引用
+	if (ptr.Kind() == reflect.Map || ptr.Kind() == reflect.Slice) && ptr.Len() == 0 {
+		return nil
+	}
+
+	if (ptr.Kind() == reflect.Ptr || ptr.Kind() == reflect.Map ||
+		ptr.Kind() == reflect.Slice) && !ptr.IsNil() {
 		addr := ptr.Pointer()
 		if _, exists := ctx.pointers[addr]; exists {
 			return CircularReferenceError(ctx.path, ptr)
@@ -86,7 +93,7 @@ func MarshalByGroups(v any, groups ...string) ([]byte, error) {
 }
 
 // MarshalByGroupsWithOptions 带更多可选配置的序列化函数
-func MarshalByGroupsWithOptions(v any, opts Options, groups ...string) ([]byte, error) {
+func MarshalByGroupsWithOptions(v any, opts *Options, groups ...string) ([]byte, error) {
 	// 捕获可能的panic并转换为错误
 	defer func() {
 		if r := recover(); r != nil {
@@ -104,7 +111,7 @@ func MarshalByGroupsWithOptions(v any, opts Options, groups ...string) ([]byte, 
 	}
 
 	// 创建序列化上下文
-	ctx := newContext(opts)
+	ctx := newContext(*opts)
 
 	// 获取值的中间表示
 	data, err := valueToMap(ctx, reflect.ValueOf(v), groups, opts.GroupMode)
@@ -136,7 +143,7 @@ func MarshalToMap(v any, groups ...string) (map[string]any, error) {
 }
 
 // MarshalToMapWithOptions 带选项的Map序列化
-func MarshalToMapWithOptions(v any, opts Options, groups ...string) (map[string]any, error) {
+func MarshalToMapWithOptions(v any, opts *Options, groups ...string) (map[string]any, error) {
 	// 捕获可能的panic并转换为错误
 	defer func() {
 		if r := recover(); r != nil {
@@ -152,7 +159,7 @@ func MarshalToMapWithOptions(v any, opts Options, groups ...string) (map[string]
 	}
 
 	// 创建序列化上下文
-	ctx := newContext(opts)
+	ctx := newContext(*opts)
 
 	// 获取值的中间表示
 	result, err := valueToMap(ctx, reflect.ValueOf(v), groups, opts.GroupMode)
@@ -184,16 +191,57 @@ func valueToMap(ctx *serializeContext, v reflect.Value, groups []string, mode Gr
 		}
 	}()
 
-	// 在处理nil指针前检查深度限制
-	// 递归层级从0开始，当前深度为ctx.depth，同时考虑是否开启了深度检测
-	if ctx.opts.MaxDepth > 0 && ctx.depth >= ctx.opts.MaxDepth {
-		// 超出限制深度时，特殊处理nil指针和空值，允许返回null而不是错误
-		// 这样就不会在处理嵌套结构时过早中断
-		if (v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface) && v.IsNil() {
+	// 使用reflect.Value的Kind方法获取底层类型
+	kind := v.Kind()
+
+	// 快速处理基本类型 - 无需增加递归深度或检查循环引用
+	switch kind {
+	case reflect.String:
+		// 处理字符串类型
+		s := v.String()
+		if s == "" && ctx.opts.NullIfEmpty {
 			return nil, nil
 		}
+		return s, nil
+
+	case reflect.Bool:
+		return v.Bool(), nil
+
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int(), nil
+
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return v.Uint(), nil
+
+	case reflect.Float32, reflect.Float64:
+		// 处理浮点类型 - 特殊处理NaN和Inf
+		f := v.Float()
+		if isSpecialFloat(f) {
+			return floatToString(f), nil
+		}
+		return f, nil
+
+	case reflect.Complex64, reflect.Complex128:
+		// 处理复数类型
+		c := v.Complex()
+		return complex128ToString(c), nil
+	}
+
+	// 处理nil指针
+	if (kind == reflect.Pointer || kind == reflect.Interface) && v.IsNil() {
+		if ctx.opts.IgnoreNilPointers && kind == reflect.Pointer {
+			return nil, errors.New("skip_field")
+		}
+		return nil, nil
+	}
+
+	// 增加递归深度并检查限制 - 只对复杂类型执行
+	if err := ctx.enterLevel(); err != nil {
+		// 超出深度限制，但对于nil和空值仍然可以返回
 		if v.Kind() == reflect.Slice || v.Kind() == reflect.Map {
 			if v.Len() == 0 {
+				// 离开当前级别以保持计数准确
+				ctx.leaveLevel()
 				if ctx.opts.NullIfEmpty {
 					return nil, nil
 				}
@@ -203,29 +251,13 @@ func valueToMap(ctx *serializeContext, v reflect.Value, groups []string, mode Gr
 				return map[string]any{}, nil
 			}
 		}
-	}
 
-	// 增加递归深度并检查限制
-	if err := ctx.enterLevel(); err != nil {
+		// 对于其他类型，返回深度错误
 		return nil, err
 	}
 	defer ctx.leaveLevel()
 
-	// 使用reflect.Value的Kind方法获取底层类型
-	kind := v.Kind()
-
-	// 处理nil指针
-	if (kind == reflect.Pointer || kind == reflect.Interface) && v.IsNil() {
-		if ctx.opts.IgnoreNilPointers && kind == reflect.Pointer {
-			return nil, errors.New("skip_field")
-		}
-		if ctx.opts.NullIfEmpty {
-			return nil, nil
-		}
-		return nil, nil
-	}
-
-	// 检查循环引用
+	// 检查循环引用 - 只对可能形成循环的类型执行
 	if kind == reflect.Ptr || kind == reflect.Map || kind == reflect.Slice {
 		if err := ctx.checkPointer(v); err != nil {
 			return nil, err
@@ -235,7 +267,7 @@ func valueToMap(ctx *serializeContext, v reflect.Value, groups []string, mode Gr
 	// 根据类型进行不同处理
 	switch kind {
 	case reflect.Ptr, reflect.Interface:
-		// 递归处理指针和接口类型 - 前面已处理nil情况
+		// 递归处理指针和接口类型
 		return valueToMap(ctx.withPath(""), v.Elem(), groups, mode)
 
 	case reflect.Struct:
@@ -273,29 +305,8 @@ func valueToMap(ctx *serializeContext, v reflect.Value, groups []string, mode Gr
 		}
 		return sliceToSlice(ctx, v, groups, mode)
 
-	case reflect.Complex64, reflect.Complex128:
-		// 处理复数类型
-		c := v.Complex()
-		return complex128ToString(c), nil
-
-	case reflect.String:
-		// 处理字符串类型
-		s := v.String()
-		if s == "" && ctx.opts.NullIfEmpty {
-			return nil, nil
-		}
-		return s, nil
-
-	case reflect.Float32, reflect.Float64:
-		// 处理浮点类型 - 特殊处理NaN和Inf
-		f := v.Float()
-		if isSpecialFloat(f) {
-			return floatToString(f), nil
-		}
-		return f, nil
-
 	default:
-		// 处理基本类型
+		// 处理其他类型
 		return v.Interface(), nil
 	}
 }
@@ -314,16 +325,16 @@ func structToMap(ctx *serializeContext, v reflect.Value, groups []string, mode G
 	}
 
 	for _, field := range fields {
+		// 检查字段是否属于指定分组
+		if !shouldIncludeField(field, mode, groups...) {
+			continue
+		}
+
 		// 创建新上下文，包含字段路径
 		fieldCtx := ctx.withPath(field.Name)
 
 		// 获取字段值
 		fieldValue := v.FieldByIndex(field.Index)
-
-		// 检查字段是否属于指定分组
-		if !shouldIncludeField(field, mode, groups...) {
-			continue
-		}
 
 		// 处理内嵌匿名字段
 		if field.Anonymous && fieldValue.Kind() == reflect.Struct {
@@ -342,24 +353,22 @@ func structToMap(ctx *serializeContext, v reflect.Value, groups []string, mode G
 			continue
 		}
 
-		// 检查是否为nil指针
+		// 处理nil指针和空值
 		isNilPointer := fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil()
+		if isNilPointer && ctx.opts.IgnoreNilPointers {
+			continue
+		}
 
-		// 处理nil指针的跳过逻辑
-		if isNilPointer {
-			if ctx.opts.IgnoreNilPointers {
+		isNilOrEmpty := isNilPointer || isEmptyValue(fieldValue)
+		if isNilOrEmpty {
+			if field.OmitEmpty && !ctx.opts.NullIfEmpty {
 				continue
 			}
+
 			if ctx.opts.NullIfEmpty {
 				result[field.JSONName] = nil
 				continue
 			}
-		}
-
-		// 判断是否应该根据omitempty跳过字段
-		isNilOrEmpty := isEmptyValue(fieldValue)
-		if field.OmitEmpty && isNilOrEmpty && !ctx.opts.NullIfEmpty {
-			continue
 		}
 
 		// 递归处理字段值
@@ -372,9 +381,11 @@ func structToMap(ctx *serializeContext, v reflect.Value, groups []string, mode G
 			return nil, err
 		}
 
-		// 只有当字段值非nil或启用了NullIfEmpty时才添加
-		if fieldInterface != nil || (isNilOrEmpty && ctx.opts.NullIfEmpty) {
+		// 添加结果到map
+		if fieldInterface != nil {
 			result[field.JSONName] = fieldInterface
+		} else if ctx.opts.NullIfEmpty {
+			result[field.JSONName] = nil
 		}
 	}
 
@@ -383,8 +394,6 @@ func structToMap(ctx *serializeContext, v reflect.Value, groups []string, mode G
 
 // mapToMap 处理map类型
 func mapToMap(ctx *serializeContext, v reflect.Value, groups []string, mode GroupMode) (any, error) {
-	// nil和空map检查在valueToMap已处理
-
 	// 预分配合理容量的map
 	size := v.Len()
 	resultMap := make(map[string]any, size)
@@ -397,10 +406,15 @@ func mapToMap(ctx *serializeContext, v reflect.Value, groups []string, mode Grou
 
 		// 获取key的字符串表示
 		var keyStr string
-		if k.Kind() == reflect.String {
+		switch k.Kind() {
+		case reflect.String:
 			keyStr = k.String()
-		} else {
-			// 非字符串键尝试转换为字符串
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			keyStr = strconv.FormatInt(k.Int(), 10)
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			keyStr = strconv.FormatUint(k.Uint(), 10)
+		default:
+			// 其他类型转换为字符串
 			keyStr = fmt.Sprint(k.Interface())
 		}
 
@@ -430,7 +444,7 @@ func sliceToSlice(ctx *serializeContext, v reflect.Value, groups []string, mode 
 	length := v.Len()
 	result := make([]any, 0, length)
 
-	for i := range length {
+	for i := 0; i < length; i++ {
 		item := v.Index(i)
 
 		// 为数组元素创建上下文

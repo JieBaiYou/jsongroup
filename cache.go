@@ -151,71 +151,74 @@ func (c *fieldCache) Clear() {
 // getFieldsInfo 获取类型的字段信息
 // 优先从缓存获取，不存在则解析并加入缓存
 func (c *fieldCache) getFieldsInfo(t reflect.Type, tagKey string) ([]fieldInfo, error) {
-	// 获取指针内部类型
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-
 	// 快速检查非结构体类型
 	if t.Kind() != reflect.Struct {
 		return nil, nil
 	}
 
-	// 尝试从缓存读取
+	// 1. 首先尝试读取缓存 - 只读锁
 	c.mu.RLock()
 	if element, ok := c.cache[t]; ok {
 		entry, valid := element.Value.(*cacheEntry)
 		if valid && entry != nil {
 			c.stats.hits++
-			// 移动到列表头部（表示最近使用）
-			c.mu.RUnlock() // 必须先释放读锁
+			result := entry.value // 拷贝结果
+			c.mu.RUnlock()
 
-			c.mu.Lock()
-			c.evictList.MoveToFront(element)
-			c.mu.Unlock()
+			// 异步更新LRU位置 - 减少持锁时间
+			go func() {
+				c.mu.Lock()
+				c.evictList.MoveToFront(element)
+				c.mu.Unlock()
+			}()
 
-			return entry.value, nil
+			return result, nil
 		}
 	}
 	c.mu.RUnlock() // 缓存未命中，释放读锁
 
-	// 解析字段信息
+	// 2. 解析字段信息 - 无锁操作
 	fields, err := parseFields(t, tagKey)
 	if err != nil {
 		return nil, err
 	}
 
-	// 添加到缓存
+	// 3. 缓存结果 - 写锁，但优化操作顺序
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
-	c.stats.misses++
-
-	// 再次检查，可能在竞争条件下已被其他goroutine添加
+	// 二次检查，可能在竞争条件下已被其他goroutine添加
 	if element, ok := c.cache[t]; ok {
 		entry, valid := element.Value.(*cacheEntry)
 		if valid && entry != nil {
 			c.evictList.MoveToFront(element)
-			return entry.value, nil
+			result := entry.value // 拷贝结果防止锁外修改
+			c.mu.Unlock()
+			return result, nil
 		}
 	}
 
-	// 检查是否达到容量上限，如果是，先淘汰最旧条目
-	for c.maxSize > 0 && c.evictList.Len() >= c.maxSize {
-		if err := c.evict(); err != nil {
-			return fields, err // 淘汰失败，但仍返回解析的字段
+	// 缓存管理逻辑
+	if c.maxSize > 0 {
+		// 提前批量淘汰，减少锁频率
+		for c.evictList.Len() >= c.maxSize && c.evictList.Len() > 0 {
+			c.evict()
 		}
 	}
 
-	// 创建新缓存条目
+	// 添加新缓存
 	entry := &cacheEntry{
 		createdAt: time.Now(),
 		value:     fields,
 	}
 	element := c.evictList.PushFront(entry)
 	c.cache[t] = element
+	c.stats.misses++
 
-	return fields, nil
+	// 拷贝结果防止锁外修改
+	result := fields
+	c.mu.Unlock()
+
+	return result, nil
 }
 
 // evict 根据LRU淘汰策略删除一个缓存条目

@@ -45,8 +45,8 @@ type Options struct {
 }
 
 // DefaultOptions 返回默认选项配置
-func DefaultOptions() Options {
-	return Options{
+func DefaultOptions() *Options {
+	return &Options{
 		GroupMode:             GroupModeOr,
 		TopLevelKey:           "",
 		TagKey:                "groups",
@@ -60,25 +60,25 @@ func DefaultOptions() Options {
 }
 
 // WithTopLevelKey 设置顶层包装键名
-func (o Options) WithTopLevelKey(key string) Options {
+func (o *Options) WithTopLevelKey(key string) *Options {
 	o.TopLevelKey = key
 	return o
 }
 
 // WithGroupMode 设置分组模式
-func (o Options) WithGroupMode(mode GroupMode) Options {
+func (o *Options) WithGroupMode(mode GroupMode) *Options {
 	o.GroupMode = mode
 	return o
 }
 
 // WithTagKey 设置标签键名
-func (o Options) WithTagKey(key string) Options {
+func (o *Options) WithTagKey(key string) *Options {
 	o.TagKey = key
 	return o
 }
 
 // WithNullIfEmpty 设置是否对空值输出null
-func (o Options) WithNullIfEmpty(enable bool) Options {
+func (o *Options) WithNullIfEmpty(enable bool) *Options {
 	o.NullIfEmpty = enable
 	// 当启用NullIfEmpty时，自动禁用IgnoreNilPointers
 	if enable {
@@ -88,33 +88,33 @@ func (o Options) WithNullIfEmpty(enable bool) Options {
 }
 
 // WithIgnoreNilPointers 设置是否忽略nil指针字段
-func (o Options) WithIgnoreNilPointers(enable bool) Options {
+func (o *Options) WithIgnoreNilPointers(enable bool) *Options {
 	o.IgnoreNilPointers = enable
 	return o
 }
 
 // WithUseInterfaceForNested 设置是否对嵌套结构使用any
-func (o Options) WithUseInterfaceForNested(enable bool) Options {
+func (o *Options) WithUseInterfaceForNested(enable bool) *Options {
 	o.UseInterfaceForNested = enable
 	return o
 }
 
 // WithMaxDepth 设置最大递归深度限制
 // depth应为正数，设置为0表示不限制（不推荐）
-func (o Options) WithMaxDepth(depth int) Options {
+func (o *Options) WithMaxDepth(depth int) *Options {
 	o.MaxDepth = depth
 	return o
 }
 
 // WithDisableCircularCheck 设置是否禁用循环引用检测
-func (o Options) WithDisableCircularCheck(disable bool) Options {
+func (o *Options) WithDisableCircularCheck(disable bool) *Options {
 	o.DisableCircularCheck = disable
 	return o
 }
 
 // WithMaxCacheSize 设置字段缓存的最大条目数
 // size应为正数，设置为0表示不限制（不推荐）
-func (o Options) WithMaxCacheSize(size int) Options {
+func (o *Options) WithMaxCacheSize(size int) *Options {
 	o.MaxCacheSize = size
 	return o
 }

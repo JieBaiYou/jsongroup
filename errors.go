@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strings"
 )
 
 // ErrType 错误类型枚举
@@ -44,7 +43,7 @@ type Error struct {
 func (e *Error) Error() string {
 	msg := e.Message
 	if e.Path != "" {
-		msg = fmt.Sprintf("%s at path '%s'", msg, e.Path)
+		msg = fmt.Sprintf("%s 路径: '%s'", msg, e.Path)
 	}
 	if e.Cause != nil {
 		msg = fmt.Sprintf("%s: %v", msg, e.Cause)
@@ -136,14 +135,14 @@ func RecoverFromPanic(path string) func() error {
 			case error:
 				err = &Error{
 					Type:    ErrTypeReflection,
-					Message: "反射操作导致panic",
+					Message: "反射操作导致Panic",
 					Path:    path,
 					Cause:   v,
 				}
 			default:
 				err = &Error{
 					Type:    ErrTypeUnknown,
-					Message: fmt.Sprintf("未知panic: %v", r),
+					Message: fmt.Sprintf("未知Panic: %v", r),
 					Path:    path,
 				}
 			}
@@ -168,12 +167,6 @@ func WrapJSONError(err error, path string) error {
 	switch e := err.(type) {
 	case *json.UnsupportedTypeError:
 		return UnsupportedTypeError(path, e.Type.String())
-	case *json.UnsupportedValueError:
-		// 检查是否是循环引用错误
-		if strings.Contains(e.Error(), "encountered a cycle") {
-			return CircularReferenceError(path, e.Value)
-		}
-		return UnsupportedTypeError(path, fmt.Sprintf("%T", e.Value))
 	case *json.MarshalerError:
 		return ReflectionError(path, e.Err)
 	case *json.SyntaxError, *json.InvalidUnmarshalError:
