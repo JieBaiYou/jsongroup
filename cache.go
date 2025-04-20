@@ -32,6 +32,8 @@ type fieldInfo struct {
 	Groups []string
 	// 是否忽略空值
 	OmitEmpty bool
+	// 是否忽略零值（Go 1.24新特性）
+	OmitZero bool
 	// 是否为匿名字段
 	Anonymous bool
 }
@@ -201,7 +203,7 @@ func (c *fieldCache) getFieldsInfo(t reflect.Type, tagKey string) ([]fieldInfo, 
 	if c.maxSize > 0 {
 		// 提前批量淘汰，减少锁频率
 		for c.evictList.Len() >= c.maxSize && c.evictList.Len() > 0 {
-			c.evict()
+			_ = c.evict()
 		}
 	}
 
@@ -300,7 +302,7 @@ func parseFields(t reflect.Type, tagKey string) ([]fieldInfo, error) {
 		groupsTag := field.Tag.Get(tagKey)
 
 		// 解析JSON标签
-		jsonName, omitEmpty := parseJSONTag(field.Name, jsonTag)
+		jsonName, omitEmpty, omitZero := parseJSONTag(field.Name, jsonTag)
 		if jsonName == "-" {
 			continue // 忽略标记为"-"的字段
 		}
@@ -326,6 +328,7 @@ func parseFields(t reflect.Type, tagKey string) ([]fieldInfo, error) {
 					JSONName:  nf.JSONName,
 					Groups:    nf.Groups,
 					OmitEmpty: nf.OmitEmpty,
+					OmitZero:  nf.OmitZero,
 					Anonymous: nf.Anonymous,
 				})
 			}
@@ -337,6 +340,7 @@ func parseFields(t reflect.Type, tagKey string) ([]fieldInfo, error) {
 				JSONName:  jsonName,
 				Groups:    groups,
 				OmitEmpty: omitEmpty,
+				OmitZero:  omitZero,
 				Anonymous: field.Anonymous,
 			})
 		}
@@ -346,9 +350,9 @@ func parseFields(t reflect.Type, tagKey string) ([]fieldInfo, error) {
 }
 
 // parseJSONTag 解析JSON标签
-func parseJSONTag(fieldName, jsonTag string) (string, bool) {
+func parseJSONTag(fieldName, jsonTag string) (string, bool, bool) {
 	if jsonTag == "" {
-		return fieldName, false
+		return fieldName, false, false
 	}
 
 	parts := strings.Split(jsonTag, ",")
@@ -357,16 +361,18 @@ func parseJSONTag(fieldName, jsonTag string) (string, bool) {
 		name = fieldName
 	}
 
-	// 检查omitempty选项
+	// 检查omitempty和omitzero选项
 	omitEmpty := false
+	omitZero := false
 	for _, opt := range parts[1:] {
 		if opt == "omitempty" {
 			omitEmpty = true
-			break
+		} else if opt == "omitzero" {
+			omitZero = true
 		}
 	}
 
-	return name, omitEmpty
+	return name, omitEmpty, omitZero
 }
 
 // parseGroupsTag 解析分组标签

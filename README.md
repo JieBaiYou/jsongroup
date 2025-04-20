@@ -10,7 +10,7 @@ JSONGroup 是一个功能强大的 Go 语言库，用于按照字段标签的分
 - **多分组逻辑**：支持"或"（默认）和"与"逻辑，灵活控制字段的选择条件
 - **自定义顶层包装**：可选择是否添加顶层包装键
 - **兼容标准 JSON 标签**：保留`json:"name,omitempty"`等标准功能
-- **零值处理**：支持`omitempty`或强制输出 null 值
+- **零值处理**：支持`omitempty`与`omitzero`标签（Go 1.24 新特性），精确控制字段省略条件
 - **防御功能**：内置循环引用检测和递归深度限制，防止栈溢出
 - **详细错误信息**：提供丰富的错误上下文，便于调试
 - **性能优化**：内置类型缓存和 LRU 淘汰机制，优化反射性能
@@ -151,6 +151,66 @@ userMap, _ := jsongroup.MarshalToMap(user, "public")
 userMap["extra_field"] = "额外信息"
 finalJSON, _ := json.Marshal(userMap)
 ```
+
+### Go 1.24 中的 omitzero 支持
+
+JSONGroup 完整支持 Go 1.24 引入的 `omitzero` 标签，让你能更精确地控制字段的序列化：
+
+- **omitzero 与 omitempty 的区别**：
+  - `omitempty`：省略"空"值，包括零值数字、空字符串、nil 指针，**以及空切片和空映射**
+  - `omitzero`：只省略"零"值，包括零值数字、空字符串、nil 指针、零时间，但**保留空切片和空映射**
+
+```go
+type Product struct {
+    ID          int       `json:"id"`
+    Name        string    `json:"name"`
+    Price       float64   `json:"price,omitzero"`    // 价格为0时不输出
+    Stock       int       `json:"stock,omitempty"`   // 库存为0时不输出
+    Tags        []string  `json:"tags,omitzero"`     // 即使标签切片为空也会输出
+    Properties  map[string]string `json:"props,omitempty"` // 属性映射为空时不输出
+    UpdatedAt   time.Time `json:"updatedAt,omitzero"`  // 零时间不输出
+}
+
+product := Product{
+    ID:         1,
+    Name:       "样品产品",
+    Price:      0,         // 价格为0，应被省略
+    Stock:      0,         // 库存为0，应被省略
+    Tags:       []string{},  // 空切片，使用omitzero将保留
+    Properties: map[string]string{},  // 空映射，使用omitempty将省略
+    UpdatedAt:  time.Time{}, // 零时间，应被省略
+}
+
+json, _ := json.Marshal(product)
+fmt.Println(string(json))
+// 标准库输出: {"id":1,"name":"样品产品","tags":[]}
+
+json, _ := jsongroup.MarshalByGroups(product)
+fmt.Println(string(json))
+// JSONGroup输出: {"id":1,"name":"样品产品","tags":[]}
+```
+
+#### 应用场景
+
+`omitzero` 非常适合以下场景：
+
+- **区分"零"与"空"**：当 0 是有意义的值时，你可以区分性地忽略某些零值
+- **保留集合类型**：即使集合为空，你也希望明确输出一个空数组或空对象
+- **API 版本兼容**：确保 API 响应格式一致性，即使某些集合为空
+
+#### 组合使用标签
+
+`omitzero` 可以与其他标签组合使用：
+
+```go
+type ComboExample struct {
+    Value1 int `json:"v1,omitempty,omitzero"` // 两个标签效果叠加
+    Value2 int `json:"v2,omitempty"`          // 仅使用omitempty
+    Value3 int `json:"v3,omitzero"`           // 仅使用omitzero
+}
+```
+
+当组合使用时，字段会满足任一条件就被省略（两种条件是"或"的关系）。
 
 ## 高级配置选项
 
@@ -323,11 +383,13 @@ go test github.com/JieBaiYou/jsongroup -run=TestBasicTypes
    - 改进字段缓存，添加 LRU 淘汰策略
    - 可配置的缓存大小限制，防止内存泄漏
    - 针对大型结构体的预分配优化
+   - 为基本类型添加快速处理路径，提高序列化性能
    - 使用 Go 1.22+ 的 range over int 语法优化循环结构，提高代码可读性
    - 移除冗余的循环和条件检查，减少不必要的计算
 
 3. **功能完善**：
 
+   - 支持 Go 1.24 新引入的 `omitzero` 标签，更精细地控制零值字段的序列化
    - 增加忽略 nil 指针的选项（默认开启）
    - 改进空值处理逻辑，支持 null 和忽略两种模式
    - 支持更多基本类型（包括复数）

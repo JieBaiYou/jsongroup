@@ -311,6 +311,35 @@ func valueToMap(ctx *serializeContext, v reflect.Value, groups []string, mode Gr
 	}
 }
 
+// isZeroValue 判断值是否为"零值"（非空集合）
+// 与isEmptyValue的区别：isZeroValue不会将空切片/空映射视为零值
+func isZeroValue(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Bool:
+		return !v.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() == 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return v.Uint() == 0
+	case reflect.Float32, reflect.Float64:
+		return v.Float() == 0
+	case reflect.String:
+		return v.String() == ""
+	case reflect.Interface, reflect.Ptr:
+		return v.IsNil()
+	// 时间类型特殊处理
+	case reflect.Struct:
+		if v.Type() == reflect.TypeOf(time.Time{}) {
+			return v.Interface().(time.Time).IsZero()
+		}
+		return false
+	// 集合类型不视为零值，即使它们是空的
+	case reflect.Array, reflect.Map, reflect.Slice:
+		return false
+	}
+	return false
+}
+
 // structToMap 将结构体转换为map
 func structToMap(ctx *serializeContext, v reflect.Value, groups []string, mode GroupMode) (any, error) {
 	// 估计map容量
@@ -359,16 +388,19 @@ func structToMap(ctx *serializeContext, v reflect.Value, groups []string, mode G
 			continue
 		}
 
+		// 检查是否为空值或零值
 		isNilOrEmpty := isNilPointer || isEmptyValue(fieldValue)
-		if isNilOrEmpty {
-			if field.OmitEmpty && !ctx.opts.NullIfEmpty {
-				continue
-			}
+		isZero := isZeroValue(fieldValue)
 
-			if ctx.opts.NullIfEmpty {
-				result[field.JSONName] = nil
-				continue
-			}
+		// 处理omitempty和omitzero
+		if (field.OmitEmpty && isNilOrEmpty && !ctx.opts.NullIfEmpty) ||
+			(field.OmitZero && isZero && !ctx.opts.NullIfEmpty) {
+			continue
+		}
+
+		if isNilOrEmpty && ctx.opts.NullIfEmpty {
+			result[field.JSONName] = nil
+			continue
 		}
 
 		// 递归处理字段值
