@@ -6,7 +6,7 @@
 
 - 使用 Go 1.22+的 range over int 语法优化循环结构，提高代码可读性
 - 使用 slices.Contains 替代手动 for 循环检查，简化代码
-- 使用 any 替代 interface{}类型声明，符合最新 Go 语法建议
+- 使用 any 替代 any 类型声明，符合最新 Go 语法建议
 - 移除冗余的循环和条件检查，减少不必要计算
 - 修复静态代码分析工具检测的问题(golint, go vet)
 

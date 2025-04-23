@@ -405,7 +405,7 @@ go test github.com/JieBaiYou/jsongroup -run=TestBasicTypes
 5. **代码质量**：
 
    - 全面使用 Go 1.22+ 的新特性进行代码现代化
-   - 使用 any 代替 interface{} 类型声明，符合最新 Go 语法建议
+   - 使用 any 代替 any 类型声明，符合最新 Go 语法建议
    - 消除静态代码分析工具（如 go vet 和 golangci-lint）检测的问题
    - 遵循最佳实践，提高代码可维护性
 
